@@ -27,13 +27,12 @@ Blog posts
 
 ## No Protocol Specification
 
-The first thing is there is no specification. The MySQL Internals
-documentation is basic and gives you an idea of how the protocol
-can be used. It does not tell you exactly how the protocol behaves.
-The worklogs are quite detailed and are a good start but are not
-written as a specification.
+Currently there is no formal specification of the MySQL X protocol.
+The MySQL Internals documentation is basic and gives you an idea
+of how the protocol can be used. It does not tell you exactly how
+the protocol behaves.  The worklogs are quite detailed and are a
+good start but are not written as a specification.
 
 A good guide for this would e a RFC type format which is more formalised.
 
-This document tries to identify what things seem to be unclear and
-would be good in such a documentation.
+This repo includes the starts of such a document.
