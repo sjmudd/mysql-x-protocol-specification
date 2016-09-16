@@ -1,0 +1,507 @@
+
+README README README README README README README README README README
+
+Based on the RFC format but done manually. This would need fixing
+later.  Try to keep to normal fmt width size.
+
+README README README README README README README README README README
+
+MySQL Working Group whatever                                Simon J Mudd
+Request for Comments: 9999                                              
+Category: Informational                                                 
+                                                               June 2016
+
+                          The MySQL X Protocol
+
+Status of This Memo
+
+   This memo provides information on the MySQL X protocol introduced
+   in MySQL 5.7.12.  There is documentation about the protocol
+   provided by Oracle in a few locations but the documentation does
+   not provide a complete specification of the protcol, one where
+   a client or server implementation could be written without looking
+   at MySQL source code.  This document is intended to try to address
+   this by formally specifying initial state and then behaviour
+   under both normal and error conditions which can happen in a
+   normal MySQL environment.
+
+Copyright Notice
+
+   Copyright (C) Simon J Mudd (2016).
+
+1.  Introduction
+
+   The MySQL X protocol is a protocol to allow a client to access
+   a MySQL server.  Traditionally this has been done by a different
+   (legacy) protocol, but the precise specification of that protocol
+   was never fully documented formally.
+
+   Oracle has decided to use a new protocol which is intended to
+   be more open and flexible and has also provided several
+   implementation libraries using this protocol for the following
+   languages: C, Java, .net, node.js and Python.  The new protocol
+   also includes extensions for a more native "CRUD style" access
+   to the database which is popular for users of NoSQL such as
+   MongoDB and accesible as the MySQL DocumentStore..
+
+   Given that software developers may have a need to access the
+   MySQL server using a language other than those officially supported
+   by Oracle a formal "network specification" describes how to
+   communicate with the server.  This allows implementators to
+   connect to the MySQL servers using the language most suitable
+   for their job, confident in the knowledge that they follow the
+   specification.
+
+   The use of a formal specification also avoids feature drift.
+   Over time it is likely that requirements will change and it is
+   very tempting to just adapt the libraries slightly or to add new
+   features and without a formal specification of these changes.
+   If this happens it may be done in a way which is incompatible
+   with existing usage and thus not fully transparent. If the need
+   for such changes arises then the protocol can be extended in a
+   which which will not break backwards compatibility but will allow
+   existing implementations to work correctly while newer implementations
+   can take advantage of these new features.
+
+   The MySQL ecosystem is quite a bit larger than just the MySQL
+   software provided by Oracle.  Several other companies or groups
+   of users provide servers based on forks or derivatives of the
+   original MySQL code due to its open source nature and many people
+   use their products. Additionally many commercial RDBMSes are
+   also based on MySQL code.  Examples of such companies are MariaDB,
+   Percona, Amazon, Alibaba, WebScaleSQL, MemSQL, ScaleDB, ClustrixDB
+   and others.
+
+   The introduction of the MySQL X protocol is currently quite new,
+   04/2016, and was introduced on Oracle's MySQL in version 5.7.12
+   as a "rapid plugin", disabled by default but considered to be
+   production-ready for those that want to use or try it. It is still
+   unclear if other forks of MySQL will include this functionality
+   in their own code base, For it to be attractive to users a wider
+   usage by several "vendors" would be convenient.  In a situation
+   like this it becomes especially important to have a network based
+   specification to ensure compatibility amongst all users and
+   on all vendors products.
+
+
+2. Overview of the MySQL X Protocol model.
+
+   A client wanting to query a MySQL server and obtain some information
+   will connect to the server using a stream based protocol such
+   as tcp and then send a series of requests to the server. If using
+   tcp/ip the default port to be used is 33060. (reference:
+   https://www.iana.org/assignments/service-names-port-numbers/service-names-port-numbers.txt)
+
+   Each request is sent as a single message and the server will
+   respond with one or more messages in response to the given request.
+   This situation continues until the client decides it has no more
+   requests to make at which point it can send a request to disconnect from
+   the server which will be acknowledged.  The server may also send
+   unsolicted messages to the client at any time to avise it of
+   changes which may interest the client.  These messages should
+   be accepted and handled appropriately if possible.
+
+   One of the reasons for designing a new protocol to allow
+   clients and servers to communicate is due to various limitations
+   of the existing "legacy MySQL protocol".  A major difference
+   in the new protocol is the ability to pipleline various messages
+   and not have to wait for acknowledgement of a command before
+   sending the next one.  This can provide a benefit to the user
+   where the ratio of the query time to network latency time is
+   low as in situations like this the network latency can become
+   a factor which affects overall throughput by the client.  Where
+   network latency increases this can be even more pronounced.
+
+2.1 Message structure
+
+   The messages exchanged between client and server are based on
+   Google protobuf messages, to be described later. To ensure the
+   receiver knows exactly which message type and content it is 
+   going to receive the sender prefixes the data to be sent
+   with a 4-byte littlen-endian length indicator. That length
+   indicates the size of the 1-byte message type indicator and any subsequent
+   bytes required by the protobuf message. Some message types
+   require no additional bytes.
+
+   It is INVALID to send a message of length 0 bytes as there is
+   no space to indicate the message type. If such a message is
+   received it must therefore be outside of the protocol specification
+   and the connection SHOULD be dropped. This behaviour is not
+   currently enforced.  See http://bugs.mysql.com/82862.
+
+2.2 Message Flow
+
+   In order to send requests to the server the client must first
+   authenticate itself. It may also want to encrypt the connection.
+   To do this it may also want to know what "capabilities"
+   the server has to offer and for example if it supports an encrypted
+   connection or not.  Consequently the connection goes through
+   several phases:
+
+   (a) connect to server
+   (b) exchange server capabilities phase (optional)
+   (c) authentication phase
+   (d) query request / response phase
+   (e) logout phase
+   (f) disconnect from server.
+
+   Each of these phases will be described as will the types of message
+   exchanged and the content of each message involved.
+
+   Encryption can be initiated as part of the capabilities exchange,
+   by setting the "tls" capability to true.
+
+2.3 Error Handling
+
+    Current documentation does not make it clear what happens under
+    different error conditions. It would be convenient to
+    make the behaviour explicit.
+
+    Errors can happen at the protocol layer but also at the application
+    layer, for example if an invalid SQL command is sent to the server,
+    and it should be clear at any stage in the exchange of messages
+    what actions should take place if an error or unexpected situation
+    occurs.
+
+    If the receiver (client or server) of a message receives a
+    message type that it does not understand then it will be unable
+    to process it. Given the lack of a specification it seems better
+    to specify that the receiver disconnects from the server, but
+    doing so might not give any indication to the sender of the
+    problem so this is not ideal.
+
+    If a server receives a message type that it does not understand
+    then it could respond with an ERROR message and provide some
+    information in that message relating to the type of problem.
+
+    e.g. ERROR 9876 (54321): Message type 99 not understood.
+
+    In any case it would be convenient to report the error back to 
+    the user unless the type of error is likely to be expected.
+
+    Current behaviour is for the server to drop the connection if
+    it receives a message type it does not understand which is not
+    convenient as it allows no backward compatibility mechanism for
+    new clients talking to old servers and attempting to use new
+    functionality.
+
+    Consequently there is an open feature request for the server
+    to report an error to a message it does not understand but to
+    not drop the connection.  See: http://bugs.mysql.com/82868.
+
+    If the server sends a message to the client that the client can
+    not understand it is probably not possible for the client to
+    indicate to the server it does not understand.  Given this
+    situation it would be convenient for the client to report this
+    problem to the user. Whether it should disconnect from the
+    server in such a case is not clear and the behaviour probably
+    should be configurable.
+
+    Consequently clarity in error handling and client/server behaviour
+    with a protocol that is likely to evolve is vital.
+
+2.4 List of Messages
+
+   The list of messages to be used in the MySQL X protocol can be found in the various protobuf 
+   files listed here: https://github.com/mysql/mysql-server/tree/5.7/rapid/plugin/x/protocol.
+
+   These currently (09/2016 as of 5.7.15) include the following files:
+   - mysqlx.proto
+   - mysqlx_connection.proto
+   - mysqlx_crud.proto
+   - mysqlx_datatypes.proto
+   - mysqlx_expect.proto
+   - mysqlx_expr.proto
+   - mysqlx_notice.proto
+   - mysqlx_resultset.proto
+   - mysqlx_session.proto
+   - mysqlx_sql.proto
+
+   Taken from the protobuf files the different known messages
+   currently are indicated in the next section.
+
+   The message ID used when sending from a client to the server is
+   different to the message IDs used when sending messages from
+   the server to the client.  This means that to correctly decode
+   a stream of X protocol data, assuming you know the beginning
+   of the message, you must know the direction of the traffic.
+
+   General decodes of the X protobuf stream will thus find it
+   harder to decode messages correctly and may need to guess.
+
+   Future messages which are created should be given Type numbers
+   which have not used before irrespective of the direction of the
+   message flow. See this feature request: http://bugs.mysql.com/82926.
+
+
+2.4.1  Client to server messages
+
+   The MySQL documentation references message names in various
+   formats.  This is somewhat confusing, and stems from a
+   mix of the names used for the messages in the protobuf definitions,
+   and also for the constants used in the same protobuf files for the
+   id value associated with each message type.  Additionally there
+   are language specific names which makes things more confusing.
+
+   Therefore in the rest of this document the names used will be
+   those seen in the proto files will be used.
+
+   The following messages can be sent by the client to the server.
+
+   ID   Message Name                 Description
+   --   ------------                 ------------------------
+    1   CON_CAPABILITIES_GET         Request information on server capabilities
+    2   CON_CAPABILITIES_SET         Set capabilities on the server
+    3   CON_CLOSE                    Close connection to the server
+    4   SESS_AUTHENTICATE_START      Start autentication process
+    5   SESS_AUTHENTICATE_CONTINUE   Send information necessary to complete authentication process
+    6   SESS_RESET
+    7   SESS_CLOSE
+   12   SQL_STMT_EXECUTE             Send a query to the server
+   17   CRUD_FIND
+   18   CRUD_INSERT
+   19   CRUD_UPDATE
+   20   CRUD_DELETE
+   24   EXPECT_OPEN
+   25   EXPECT_CLOSE
+
+2.4.2  Server to client messages
+
+   The following messages may be sent by the server to the client.
+
+   ID   Message Name                 Description
+   --   ------------                 ------------------------
+    0   OK                           Confirmation of processing previous command
+    1   ERROR                        Response indicating an error has occurred related to the previous message sent
+    2   CONN_CAPABILITIES            Provide Client with information on Server capabilities
+    3   SESS_AUTHENTICATE_CONTINUE   Response to request to authenticate, providing a ....
+    4   SESS_AUTHENTICATE_OK         Confirmation that authentication has succeeded
+   11   NOTICE                       Message which may be received at any time indicating a change in state
+   12   RESULTSET_COLUMN_META_DATA   Information regarding column data (first part of response to a query)
+   13   RESULTSET_ROW                Content of one row of data as part of a response to a query
+   14   RESULTSET_FETCH_DONE         Indication that all rows have been sent.
+   15   RESULTSET_FETCH_SUSPENDED
+   16   RESULTSET_FETCH_DONE_MORE_RESULTSETS
+   17   SQL_STMT_EXECUTE_OK          Indication that query execution has completed.
+   18   RESULTSET_FETCH_DONE_MORE_OUT_PARAMS
+
+2.5 message flow in different phases
+
+2.5.1 capabilities exchange
+
+    The capabilities exchange is optional and may happen immediately
+    after the client connects to the server. It provides information
+    on server capabilities, for example such as if the server
+    supports SSL and the authentication mechanisms it supports..
+
+    Message flow is as follows:
+
+    1.   C -> S:    CONN_CAPABILITIES_GET
+    2.   C <- S:    CONN_CAPABILITIES
+    3.   C -> S:    CONN_CAPABILITIES_SET
+    4a.  C <- S:    OK if the capability is set as requested
+    4b.  C <- S:    ERROR if an error occurs
+
+    The client does NOT need to send CONN_CAPABILITIES_GET message
+    prior to using the CONN_CAPABILITIES_SET message, but this
+    potentially leads it to requesting a capability that the server
+    can not provide which would generate an error.
+
+    The capabilities exchange is typically used to ensure the server
+    is configured to use SSL/TLS and if it does to request that a
+    TLS connection is initiated over the same communications link.
+
+    The server may support several authentication mechanisms and
+    it MUST support at least the MYSQL41 authentication mechanism
+    which is documented here https://dev.mysql.com/doc/internals/en/x-protocol-authentication-authentication.html#x-protocol-authentication-mysql41-authentication.
+
+    If the connection is encrypted then EXTERNAL and PLAIN will
+    mechanisms will also be supported. Their documentation can be
+    found here: <fill in>.
+
+2.5.1.1 Capabilities Structure
+
+    A capability is one or more 'attributes' associated with a name.
+    The attributes can be any one of the MySQL types that can be
+    sent using the X Protocol. See mysqlx_datatypes.proto for more
+    information.  Given the structure of message Any and the fact
+    that it can contain an object or an array the data structure
+    can in theory be rather complex.
+
+    Current known capabiltiies as of 5.7.14 are:
+
+    +---------------------------+------------------+---------+---------------------------------------------------------------------+
+    | capability                | type             | default | comments                                                            |
+    +---------------------------+------------------+---------+---------------------------------------------------------------------+
+    | tls                       | boolean scalar   | false   | only shown if tls is configured                                     |
+    | authentication.mechanisms | array of strings | MYSQL41 |                                                                     |
+    | doc.formats               | string scalar    | "text"  |                                                                     |
+    | node_type                 | scalar string    | "mysql" |                                                                     |
+    | plugin.version            | string scalar    | "1.0.2" | DO NOT make capabilities version specific. See bugs.mysql.com/81925 |
+    | client.pwd_expire_ok      | bool scalar      | false   |                                                                     |
+    +---------------------------+------------------+---------+---------------------------------------------------------------------+
+
+    Handling any arbitrary type of capability using this capability
+    functionality is probably not a good idea, so any implementors
+    of new functionality SHOULD avoid capability structures other
+    than:
+    - scalar boolean
+    - scalar string
+    - array string
+
+2.5.1.2 Capabilities Changability and types
+
+    Currently it is not possible to know which capability options
+    are changeable. Nor is it possible to know which values are
+    valid, so currently the documentation should indicate appropriate
+    values which are acceptable.
+
+2.5.2  Authentication
+
+    The authentication phase allows the client to identify itself
+    to the server. This can be done in various ways using different
+    authentication mechanisms.  The different mechanisms understood
+    by the server can be retrieved by using the CONN_CAPABILITIES_GET
+    message and will return at least the following mechanisms:
+    MYSQL41, ....
+
+2.5.2.1 MYSQL41 Authentication
+
+    MySQL 41 authentication requires the client sending some
+    information about the user to the server, it receives back a
+    XXXXX and uses this to generate an encrypted XXXX which is sent
+    back to the server.  At this point the server is able to verify
+    the credentials of the user and respond indicating that
+    authentication has succeeded or failed.
+
+    The message flow is as follows:
+
+    1.   C -> S:   SESS_AUTHENTICATE_START
+    2.   S -> C:   SESS_AUTHENTICATE_CONTINUE
+    3.   C -> S:   SESS_AUTHENTICATE_CONTINUE
+    4.   S -> C:   NOTICE
+    5.   S -> C:   SESS_AUTHENTICATE_OK
+
+    Note the presence of the NOTICE message which is sent to the
+    client prior to sending the SESS_AUTHENTICATE_OK message. It
+    may be ignored but appears to always be present when the
+    authentication process takes place and might be surprising.
+
+    The SESS_AUTHENTICATE_START message has 3 field:
+
+    MechName: this should be the string "MYSQL41" for doing MySQL
+    41 authentication.
+
+    AuthData and InitialResponse  are two byte streams .... (FILL
+    IN HERE).
+
+    The SESS_AUTHENTICATE_CONTINUE message has only a single field
+    AuthData which is used as follows: Fill in here for the cases
+    S -> C and C -> S.
+
+2.5.3  Query phase
+
+    The query phase is the most important part of the connection
+    as this is when the client requests information from the server
+    and retrieves the responses.
+
+    Queries can be sent in one of 2 different ways: using the
+    traditional SQL interface and also using a new CRUD interface.
+
+2.5.3.1.   Querying using the SQL interface
+
+
+    Once authenticated the client can Qquerying data from the server using the SQL
+    interface. This can be done in 2 ways. 
+    (a) send the raw query directly to the server and get back the results, and
+    (b) send a prepared statements with place holders and then send one or more
+    queries using the previously defined prepared statement plus values for each place holder
+    to get queries.  While the current MySQL documentation (at ....) implies that 
+    prepared statements are supported it seems that currently this is not
+    the case as no messages could be found to send a prepared statement.
+
+    The message sequence that is exchanged between client and server when
+    sending an SQL query is as follows:
+
+    C -> S     SQL_STMT_EXECUTE 
+
+    On successful completion of the query the server will send the following messages:
+
+    S -> C     RESULTSET_COLUMN_META_DATA   sent multiple times, one for each column in the resultset
+    S -> C     RESULTSET_ROW                sent multiple times, one for each row
+    S -> C     RESULTSET_FETCH_DONE         indicates that all rows have been sent
+    S -> C     NOTICE                       provides information on rows returned.
+    S -> C     SQL_STMT_EXECUTE_OK          indicates that the statement has been completed
+
+    If an error occurs due to a syntax error in the given query, or due to some issue
+    on the server the server will respond with a single ERROR message.
+
+    S -> C     ERROR                        indicationg the problem
+
+2.5.3.2.  Querying using the CRUD interface
+
+2.5.4. logout
+
+    The logout phase allows the client to indicate to the server
+    that it is going to disconnect.  It does this by sending a
+    SESS_CLOSE message to which the server acknowledges with an OK
+    message.  At this time the tcp connection can be closed by the
+    client.
+
+    1.   C -> S:   SESS_CLOSE
+    2.   S -> C:   OK
+
+    The logout phase is good as it ensures the server knows the
+    client has disconnected deliberately. If the client just
+    disconnects the connection without closing the session properly
+    then the server SHOULD record this via some sort of counter and
+    MAY log the event.  On a busy server with clients not disconnecting
+    cleanly this logging could be very noisy so it SHOULD be possible
+    to disable logging if so required.  It may also be convenient
+    to record in a counter the number of correct logouts processed.
+
+2.5.5. Non SQL queries
+
+2.5.6. Pipeling
+
+2.5.7. Expect messages pipeling
+
+
+3 MySQL Data types
+
+    The MySQL server stores data of various data types. the data
+    sent over the wire to the client is converted via the protobuf
+    messages into a sequence of bytes with the meta data information
+    sent initially to the client indicating the type of each column.
+
+
+
+
+=======
+NOTES:
+=======
+
+Setting  capability tls = false gives this error:
+
+ERROR: 5001 [HY000] Capability prepare failed for 'tls'
+
+-----
+
+Setting an empty CapabitlitySet gives: OK message (so noes nothing)
+Setting tls returns OK message, then seems to wait for me to initiate the TLS connection etc.
+
+logging shows:
+
+2016-08-20T08:12:25.570579Z 0 [Warning] Plugin mysqlx reported: '239: Error during SSL handshake'
+2016-08-20T08:12:25.570602Z 0 [Note] Plugin mysqlx reported: '239: ERROR reading from socket Bad file descriptor (9) 4'
+
+question? no more information available from TLS/SSL ?
+
+-----
+
+if the capability is not known you get back:
+
+ERROR: 5002 [HY000] Capability 'randomCapability' doesn't exist
+
+
+
