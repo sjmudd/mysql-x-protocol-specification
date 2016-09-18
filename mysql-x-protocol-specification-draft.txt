@@ -115,13 +115,13 @@ Copyright Notice
 2.1 Message structure
 
    The messages exchanged between client and server are based on
-   Google protobuf messages, to be described later. To ensure the
-   receiver knows exactly which message type and content it is 
-   going to receive the sender prefixes the data to be sent
-   with a 4-byte littlen-endian length indicator. That length
-   indicates the size of the 1-byte message type indicator and any subsequent
-   bytes required by the protobuf message. Some message types
-   require no additional bytes.
+   Google protobuf messages, to be described later.  To ensure the
+   receiver knows exactly which message type and content it is going
+   to receive the sender prefixes the data to be sent with a 4-byte
+   littlen-endian length indicator. That length indicates the size
+   of the 1-byte message type indicator and any subsequent bytes
+   required by the protobuf message. Some message types require no
+   additional bytes.
 
    It is INVALID to send a message of length 0 bytes as there is
    no space to indicate the message type. If such a message is
@@ -158,17 +158,18 @@ Copyright Notice
     make the behaviour explicit.
 
     Errors can happen at the protocol layer but also at the application
-    layer, for example if an invalid SQL command is sent to the server,
-    and it should be clear at any stage in the exchange of messages
-    what actions should take place if an error or unexpected situation
-    occurs.
+    layer, for example if an invalid SQL command is sent to the
+    server, and it should be clear at any stage in the exchange of
+    messages what actions should take place if an error or unexpected
+    situation occurs.
 
     If the receiver (client or server) of a message receives a
     message type that it does not understand then it will be unable
     to process it. Given the lack of a specification it seems better
     to specify that the receiver disconnects from the server, but
     doing so might not give any indication to the sender of the
-    problem so this is not ideal.
+    problem so this is not ideal. It also makes providing backward
+    compatibility much more difficult.
 
     If a server receives a message type that it does not understand
     then it could respond with an ERROR message and provide some
@@ -189,13 +190,37 @@ Copyright Notice
     to report an error to a message it does not understand but to
     not drop the connection.  See: http://bugs.mysql.com/82868.
 
-    If the server sends a message to the client that the client can
-    not understand it is probably not possible for the client to
-    indicate to the server it does not understand.  Given this
-    situation it would be convenient for the client to report this
-    problem to the user. Whether it should disconnect from the
-    server in such a case is not clear and the behaviour probably
-    should be configurable.
+    A server should not send a message to the client that it does
+    not understand. Therefore at the moment the only message types
+    that a server can send to a client are the following:
+
+    ... fill in here ...
+    [ specified as per versioned number of the protobuf messages ]
+    ... fill in here ...
+
+    It is also possible to add new fields to an existing protobuf
+    message. If the client does not have to understand or change
+    behaviour based on these few fields then it is acceptable to
+    add them.
+
+    For a server to be able to send new message types to the client
+    it must offer this via come sort of Capability, which can be
+    visible by seeing the response to a CapabilityGet message and
+    requested by a CapabilitySet message.  If the client knows that
+    it wants to use this new capability it can send a CapabilitySet
+    without first quering the server.
+
+    This process ensure backwards compatibility, allows for future
+    extension of the protocol without breaking existing usage and
+    should not add latency overhead as the pipelining should absorb
+    this.
+
+    If the server does sends a message to the client that the client
+    can not understand it is probably not possible for the client
+    to indicate this to the server.  Given this situation it would
+    be convenient for the client to report this problem to the user.
+    Whether it should disconnect from the server in such a case is
+    not clear and the behaviour probably should be configurable.
 
     Consequently clarity in error handling and client/server behaviour
     with a protocol that is likely to evolve is vital.
