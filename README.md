@@ -20,9 +20,11 @@ can handle traditional SQL statements.
 
 * https://dev.mysql.com/doc/internals/en/x-protocol-comparison-comparison-to-mysql-c-s-protocol.html
 
-## Information where Oracle talks about X Protocol
+## Information about the X Protocol
 
 Blog posts
+* http://mysqlserverteam.com/mysql-5-7-12-part-2-improving-the-mysql-protocol/
+* http://mysqlserverteam.com/mysql-5-7-12-part-3-more-than-just-sql/
 * https://www.percona.com/blog/2016/05/27/asynchronous-query-execution-mysql-5-7-x-plugin/
 
 ## No Protocol Specification
