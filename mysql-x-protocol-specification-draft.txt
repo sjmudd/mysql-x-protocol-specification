@@ -194,31 +194,49 @@ Copyright Notice
     not understand. Therefore at the moment the only message types
     that a server can send to a client are the following:
 
-    ... fill in here ...
-    [ specified as per versioned number of the protobuf messages ]
-    ... fill in here ...
+        Message type                          Value
+        -----------------------------------   -----
+        OK                                        0
+        ERROR                                     1
+        CONN_CAPABILITIES                         2
+        SESS_AUTHENTICATE_CONTINUE                3
+        SESS_AUTHENTICATE_OK                      4
+        NOTICE                                   11
+        RESULTSET_COLUMN_META_DATA               12
+        RESULTSET_ROW                            13
+        RESULTSET_FETCH_DONE                     14
+        RESULTSET_FETCH_SUSPENDED                15
+        RESULTSET_FETCH_DONE_MORE_RESULTSETS     16
+        SQL_STMT_EXECUTE_OK                      17
+        RESULTSET_FETCH_DONE_MORE_OUT_PARAMS     18
 
     It is also possible to add new fields to an existing protobuf
     message. If the client does not have to understand or change
     behaviour based on these few fields then it is acceptable to
-    add them.
+    add them. If the new fields require a different type of processing
+    then this should be treated as if a different message type 
+    is being sent. The server can not assume the client can process
+    these additional fields until the client indicates this.
 
     For a server to be able to send new message types to the client
     it must offer this via come sort of Capability, which can be
     visible by seeing the response to a CapabilityGet message and
-    requested by a CapabilitySet message.  If the client knows that
-    it wants to use this new capability it can send a CapabilitySet
-    without first quering the server.
+    requested by a CapabilitySet message.  This same behaviour is
+    required if an existing message must be treated differently.
+
+    If the client knows that it wants to use this new capability
+    it can send a CapabilitySet without first quering the server.
 
     This process ensure backwards compatibility, allows for future
     extension of the protocol without breaking existing usage and
     should not add latency overhead as the pipelining should absorb
     this.
 
-    If the server does sends a message to the client that the client
-    can not understand it is probably not possible for the client
-    to indicate this to the server.  Given this situation it would
-    be convenient for the client to report this problem to the user.
+    Inspite of the above, if the server does sends a message to the
+    client that the client can not understand it is probably not
+    possible for the client to indicate this to the server. This
+    is a protocol violation.  Given this situation it would be
+    convenient for the client to report this problem to the user.
     Whether it should disconnect from the server in such a case is
     not clear and the behaviour probably should be configurable.
 
