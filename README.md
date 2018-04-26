@@ -10,7 +10,7 @@ protocol.  This is the new MysQL protocol that was introduced in
 5.7.12 as part of the document store functionality. The same protocol
 can handle traditional SQL statements.
 
-## Where to find informaation on the protocol.
+## Where to find information on the protocol.
 
 * https://dev.mysql.com/worklog/task/?id=8338 - WL#8338: X Plugin
 * https://dev.mysql.com/worklog/task/?id=8639 - WL#8639: X Protocol
